@@ -40,13 +40,14 @@ using namespace std;
 
 ros::Publisher mapPublisher_;
 ros::Publisher visPublisher_;
+ros::Publisher pathPublisher_;
 
 
 void mapCallback(const nav_msgs::OccupancyGrid::Ptr& map) {
     StcPathPlanner planner;
     nav_msgs::OccupancyGrid::Ptr coarseMap = planner.createCoarseMap(*map);
-    MapGraph graph = planner.createSpanningTree(*coarseMap);
-    MapGraph path = planner.extractPathFromSpanningTree(graph);
+    MapGraph coarseGraph = planner.createSpanningTree(*coarseMap);
+    nav_msgs::Path::Ptr path = planner.extractPathFromSpanningTree(coarseGraph);
 
     mapPublisher_.publish(coarseMap);
 
@@ -63,20 +64,20 @@ void mapCallback(const nav_msgs::OccupancyGrid::Ptr& map) {
     marker.pose.orientation.y = 0.0;
     marker.pose.orientation.z = 0.0;
     marker.pose.orientation.w = 1.0;
-    marker.scale.x = 0.025;
-    marker.color.a = 1.0;
+    marker.scale.x = 0.1;
+    marker.color.a = 0.25;
     marker.color.r = 1.0;
     marker.color.g = 0.0;
     marker.color.b = 0.0;
 
-    foreach(const Edge& edge, path.getEdges()) {
+    foreach(const Edge& edge, coarseGraph.getEdges()) {
         geometry_msgs::Point p1;
-        p1.x = edge.vertex1.x * (coarseMap->info.resolution / 2.0) + coarseMap->info.origin.position.x + coarseMap->info.resolution / 4.0;
-        p1.y = edge.vertex1.y * (coarseMap->info.resolution / 2.0) + coarseMap->info.origin.position.y + coarseMap->info.resolution / 4.0;
+        p1.x = edge.vertex1.x * (coarseMap->info.resolution / 1.0) + coarseMap->info.origin.position.x + coarseMap->info.resolution / 2.0;
+        p1.y = edge.vertex1.y * (coarseMap->info.resolution / 1.0) + coarseMap->info.origin.position.y + coarseMap->info.resolution / 2.0;
 
         geometry_msgs::Point p2;
-        p2.x = edge.vertex2.x * (coarseMap->info.resolution / 2.0) + coarseMap->info.origin.position.x + coarseMap->info.resolution / 4.0;
-        p2.y = edge.vertex2.y * (coarseMap->info.resolution / 2.0) + coarseMap->info.origin.position.y + coarseMap->info.resolution / 4.0;
+        p2.x = edge.vertex2.x * (coarseMap->info.resolution / 1.0) + coarseMap->info.origin.position.x + coarseMap->info.resolution / 2.0;
+        p2.y = edge.vertex2.y * (coarseMap->info.resolution / 1.0) + coarseMap->info.origin.position.y + coarseMap->info.resolution / 2.0;
 
         marker.points.push_back(p1);
         marker.points.push_back(p2);
@@ -85,7 +86,7 @@ void mapCallback(const nav_msgs::OccupancyGrid::Ptr& map) {
     arr.markers.push_back(marker);
     visPublisher_.publish(arr);
 
-
+    pathPublisher_.publish(path);
     cout << "Map published" << endl;
 }
 
@@ -94,6 +95,7 @@ int main(int argc, char **argv) {
     ros::NodeHandle nodePrivate("~");
     mapPublisher_ = nodePrivate.advertise<nav_msgs::OccupancyGrid>("/map_coarse", true, 1);
     visPublisher_ = nodePrivate.advertise<visualization_msgs::MarkerArray>("/spanning_tree", true, 1);
+    pathPublisher_ = nodePrivate.advertise<nav_msgs::Path>("/path", true, 1);
     ros::Subscriber mapSubscriber = nodePrivate.subscribe("/map", 1, mapCallback);
     ros::spin();
     return 0;

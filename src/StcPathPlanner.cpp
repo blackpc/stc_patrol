@@ -36,7 +36,9 @@ nav_msgs::Path::Ptr StcPathPlanner::plan(
         const nav_msgs::OccupancyGrid& map) const {
     nav_msgs::OccupancyGrid::Ptr coarseMap = createCoarseMap(map);
     MapGraph spanningTree = createSpanningTree(*coarseMap);
-//    nav_msgs::Path path = extractPathFromSpanningTree(spanningTree);
+    nav_msgs::Path::Ptr path = extractPathFromSpanningTree(spanningTree);
+
+    return path;
 }
 
 nav_msgs::OccupancyGrid::Ptr StcPathPlanner::createCoarseMap(
@@ -88,6 +90,11 @@ MapGraph StcPathPlanner::createSpanningTree(
 
     // BFS
     MapGraph graph;
+
+    graph.setResolution(map.info.resolution);
+    graph.setOriginX(map.info.origin.position.x);
+    graph.setOriginY(map.info.origin.position.y);
+
     deque<Vertex> discovered;
 
     discovered.push_back(startVertex);
@@ -140,7 +147,7 @@ MapGraph StcPathPlanner::createSpanningTree(
     return graph;
 }
 
-MapGraph StcPathPlanner::extractPathFromSpanningTree(
+nav_msgs::Path::Ptr StcPathPlanner::extractPathFromSpanningTree(
         const MapGraph& graph) const {
 
     MapGraph fineGridGraph;
@@ -149,7 +156,7 @@ MapGraph StcPathPlanner::extractPathFromSpanningTree(
     Vertex coarseCellStart = graph.getEdges()[0].vertex1;
     Vertex fineCell(coarseCellStart.x * 2, coarseCellStart.y * 2);
 
-    // Create inter-cell edges
+    // Create edges
     foreach(const Vertex& cell, graph.getVertices()) {
         if (!graph.edgeExists(cell, cell + Vertex::TOP))
             fineGridGraph.addEdge(cell * 2, cell * 2 + Vertex::RIGHT);
@@ -180,5 +187,38 @@ MapGraph StcPathPlanner::extractPathFromSpanningTree(
         }
     }
 
-    return fineGridGraph;
+    nav_msgs::Path::Ptr path(new nav_msgs::Path());
+    path->header.frame_id = "map";
+    path->header.stamp = ros::Time::now();
+
+    Vertex currentVertex = fineGridGraph.getVertices()[0];
+    Vertex prevVertex = currentVertex;
+
+    cout << fineGridGraph.getVertices().size() << endl;
+
+    for (size_t i = 0; i < fineGridGraph.getVertices().size() + 1; ++i) {
+        if (fineGridGraph.getNeighbors(currentVertex)[0] != prevVertex) {
+            prevVertex = currentVertex;
+            currentVertex = fineGridGraph.getNeighbors(currentVertex)[0];
+        } else {
+            prevVertex = currentVertex;
+            currentVertex = fineGridGraph.getNeighbors(currentVertex)[1];
+        }
+
+        geometry_msgs::PoseStamped pose;
+        pose.header.frame_id = "map";
+        pose.header.stamp = ros::Time::now();
+        pose.pose.orientation.w = 1;
+
+        pose.pose.position.x = prevVertex.x * (graph.getResolution() / 2.0) +
+                graph.getOriginX() + graph.getResolution() / 4.0;
+
+        pose.pose.position.y = prevVertex.y * (graph.getResolution() / 2.0) +
+                graph.getOriginY() + graph.getResolution() / 4.0;
+
+        path->poses.push_back(pose);
+
+    }
+
+    return path;
 }

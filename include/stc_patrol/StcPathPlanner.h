@@ -86,7 +86,7 @@ public:
      * @param graph
      * @return
      */
-    MapGraph extractPathFromSpanningTree(const MapGraph& graph) const;
+    nav_msgs::Path::Ptr extractPathFromSpanningTree(const MapGraph& graph) const;
 
 };
 

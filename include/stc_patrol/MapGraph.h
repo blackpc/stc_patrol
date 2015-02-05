@@ -80,6 +80,10 @@ struct Vertex {
                 this->y == vertex.y;
     }
 
+    bool operator!=(const Vertex& vertex) const {
+        return !(*this == vertex);
+    }
+
     uint64_t encode() const {
         uint64_t encoded = (static_cast<uint64_t>(x) << 32) + y;
         return encoded;
@@ -175,10 +179,38 @@ public:
      */
     vector<Vertex> getVertices() const;
 
+    inline double getResolution() const {
+        return resolution_;
+    }
+
+    inline double getOriginX() const {
+        return originX_;
+    }
+
+    inline double getOriginY() const {
+        return originY_;
+    }
+
+    void setResolution(double resolution) {
+        resolution_ = resolution;
+    }
+
+    void setOriginX(double originX) {
+        originX_ = originX;
+    }
+
+    void setOriginY(double originY) {
+        originY_ = originY;
+    }
+
 private:
 
     boost::unordered_set<Vertex, VertexHasher> vertices_;
     boost::unordered_multimap<Vertex, Vertex, VertexHasher> edges_;
+
+    double resolution_;
+    double originX_;
+    double originY_;
 
 };
 
