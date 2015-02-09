@@ -1,0 +1,32 @@
+<launch>
+    <param name="/use_sim_time" value="true"/>
+
+    <arg name="init_pose" value="-x -5 -y -2 -z 1"/>
+
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find coverage)/maps/willow.yaml"/>
+
+    <!--  Launch world  -->
+    <include file="$(find gazebo_ros)/launch/willowgarage_world.launch"/>
+
+    <param name="robot_description" textfile="$(find r2d2_description)/urdf/r2d2.urdf"/>
+
+    <!--  Spawn robot's model  -->
+    <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model" args="$(arg init_pose) -urdf -param robot_description -model lizi" output="screen"/>
+
+    <node name="tf_map_to_odom" pkg="tf" type="static_transform_publisher" args="26.579088 34.368737 0 0 0 0 map odom 10" />
+
+    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+        <param name="rate" value="100" />
+    </node>
+
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+        <param name="publish_frequency" value="100" />
+    </node>
+
+    <!--  Launch coverage node  -->
+    <node name="coverage_node" pkg="coverage" type="coverage_node" output="screen"/>
+
+    <!-- RVIZ -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find coverage)/rviz/stc.rviz" />
+
+</launch>

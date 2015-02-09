@@ -27,14 +27,16 @@
  */
 
 
-#include <stc_patrol/MapGraph.h>
+#include <coverage/MapGraph.h>
 
 const Vertex Vertex::TOP = Vertex(0, -1);
 const Vertex Vertex::BOTTOM = Vertex(0, 1);
 const Vertex Vertex::LEFT = Vertex(-1, 0);
 const Vertex Vertex::RIGHT = Vertex(1, 0);
 
-MapGraph::MapGraph() {
+MapGraph::MapGraph()
+    : originX_(0), originY_(0), resolution_(0) {
+
 }
 
 void MapGraph::addEdge(const Vertex& vertex1, const Vertex& vertex2) {

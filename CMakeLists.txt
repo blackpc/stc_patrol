@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(stc_patrol)
+project(coverage)
 
 find_package(catkin REQUIRED COMPONENTS
   angles
@@ -21,19 +21,19 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_executable(stc_patrol_node 
-    src/stc_patrol_node.cpp
+add_executable(coverage_node 
+    src/coverage_node.cpp
     src/MapGraph.cpp
     src/StcPathPlanner.cpp
 )
 
-target_link_libraries(stc_patrol_node ${catkin_LIBRARIES})
+target_link_libraries(coverage_node ${catkin_LIBRARIES})
 
 #############
 ## Install ##
 #############
 
-install(TARGETS stc_patrol_node
+install(TARGETS coverage_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

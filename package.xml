@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package>
-  <name>stc_patrol</name>
+  <name>coverage</name>
   <version>0.1.0</version>
-  <description>The stc_patrol package</description>
+  <description>Spanning tree coverage</description>
   <maintainer email="blackpc.me@gmail.com">Igor M</maintainer>
   <maintainer email="oleg@maksimov.co.il">Ogeg M</maintainer>
   <license>MIT</license>

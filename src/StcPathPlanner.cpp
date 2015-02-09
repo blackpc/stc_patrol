@@ -26,17 +26,30 @@
  * THE SOFTWARE.
  */
 
-#include <stc_patrol/StcPathPlanner.h>
+#include <coverage/StcPathPlanner.h>
 
 
-StcPathPlanner::StcPathPlanner() {
+StcPathPlanner::StcPathPlanner(double coverageWidth)
+    : coverageWidth_(coverageWidth) {
+
+    ros::NodeHandle nodePrivate("~");
+
+    mapPublisher_ = nodePrivate.advertise<nav_msgs::OccupancyGrid>("/map_coarse", true, 1);
+    visPublisher_ = nodePrivate.advertise<visualization_msgs::MarkerArray>("/spanning_tree", true, 1);
 }
 
 nav_msgs::Path::Ptr StcPathPlanner::plan(
-        const nav_msgs::OccupancyGrid& map) const {
+        const nav_msgs::OccupancyGrid& map, const tf::Vector3& initialPosition) const {
+    ROS_INFO("Creating coarse map...");
     nav_msgs::OccupancyGrid::Ptr coarseMap = createCoarseMap(map);
-    MapGraph spanningTree = createSpanningTree(*coarseMap);
-    nav_msgs::Path::Ptr path = extractPathFromSpanningTree(spanningTree);
+    mapPublisher_.publish(coarseMap);
+
+    ROS_INFO("Creating spanning tree...");
+    MapGraph coarseGraph = createSpanningTree(*coarseMap, initialPosition);
+    publishSpanningTree(coarseGraph);
+
+    ROS_INFO("Extracting path...");
+    nav_msgs::Path::Ptr path = extractPathFromSpanningTree(coarseGraph, initialPosition);
 
     return path;
 }
@@ -44,7 +57,10 @@ nav_msgs::Path::Ptr StcPathPlanner::plan(
 nav_msgs::OccupancyGrid::Ptr StcPathPlanner::createCoarseMap(
         const nav_msgs::OccupancyGrid& map) const {
 
-    int factor = 24;
+    /**
+     * Multiplication factor of the original map relative to coarse map
+     */
+    int factor = 2 * (int)round(coverageWidth_ / map.info.resolution);
 
     nav_msgs::OccupancyGrid::Ptr coarseMap(new nav_msgs::OccupancyGrid());
     coarseMap->header = map.header;
@@ -72,28 +88,19 @@ nav_msgs::OccupancyGrid::Ptr StcPathPlanner::createCoarseMap(
 }
 
 MapGraph StcPathPlanner::createSpanningTree(
-        const nav_msgs::OccupancyGrid& map) const {
-
-    Vertex startVertex;
-    bool freeVertexFound = false;
-    // Find first free vertex
-    for (int y = 0; y < map.info.height; ++y)
-        for (int x = 0; x < map.info.width; ++x)
-            if (map.data[y * map.info.width + x] == 0) {
-                startVertex = Vertex(x, y);
-                freeVertexFound = true;
-                break;
-            }
-
-    if (!freeVertexFound)
-        throw new string("Free cell not found on coarse map");
+        const nav_msgs::OccupancyGrid& map,
+        const tf::Vector3& initialPosition) const {
 
     // BFS
+    // No need for kruskal or prim because we don't have weights,
+    // so BFS or DFS will do the work
     MapGraph graph;
 
     graph.setResolution(map.info.resolution);
     graph.setOriginX(map.info.origin.position.x);
     graph.setOriginY(map.info.origin.position.y);
+
+    Vertex startVertex = mapToVertex(initialPosition, graph);
 
     deque<Vertex> discovered;
 
@@ -102,8 +109,6 @@ MapGraph StcPathPlanner::createSpanningTree(
     while (!discovered.empty()) {
         Vertex currentVertex = discovered.front();
         discovered.pop_front();
-
-        cout << currentVertex.x << ", " << currentVertex.y << endl;
 
         Vertex neighbor;
 
@@ -148,15 +153,17 @@ MapGraph StcPathPlanner::createSpanningTree(
 }
 
 nav_msgs::Path::Ptr StcPathPlanner::extractPathFromSpanningTree(
-        const MapGraph& graph) const {
+        const MapGraph& graph, const tf::Vector3& initialPosition) const {
 
     MapGraph fineGridGraph;
+    fineGridGraph.setResolution(graph.getResolution() / 2.0);
+    fineGridGraph.setOriginX(graph.getOriginX());
+    fineGridGraph.setOriginY(graph.getOriginY());
 
-    double orientation = 0;
     Vertex coarseCellStart = graph.getEdges()[0].vertex1;
     Vertex fineCell(coarseCellStart.x * 2, coarseCellStart.y * 2);
 
-    // Create edges
+    // Create fine graph - the path graph around spanning tree graph
     foreach(const Vertex& cell, graph.getVertices()) {
         if (!graph.edgeExists(cell, cell + Vertex::TOP))
             fineGridGraph.addEdge(cell * 2, cell * 2 + Vertex::RIGHT);
@@ -187,28 +194,32 @@ nav_msgs::Path::Ptr StcPathPlanner::extractPathFromSpanningTree(
         }
     }
 
+
+    // The fine graph contains a path around spanning tree.
+    // The following algorithm is a simplified version of DFS
+    // that assumes each edge has exactly to vertices
     nav_msgs::Path::Ptr path(new nav_msgs::Path());
     path->header.frame_id = "map";
     path->header.stamp = ros::Time::now();
 
-    Vertex currentVertex = fineGridGraph.getVertices()[0];
+    Vertex currentVertex = mapToVertex(initialPosition, fineGridGraph);
     Vertex prevVertex = currentVertex;
+    geometry_msgs::PoseStamped pose;
+    pose.header.frame_id = "map";
+    pose.header.stamp = ros::Time::now();
+    pose.pose.orientation.w = 1;
 
-    cout << fineGridGraph.getVertices().size() << endl;
-
-    for (size_t i = 0; i < fineGridGraph.getVertices().size() + 1; ++i) {
-        if (fineGridGraph.getNeighbors(currentVertex)[0] != prevVertex) {
+    size_t verticesCount = fineGridGraph.getVertices().size();
+    for (size_t i = 0; i < verticesCount; ++i) {
+        vector<Vertex> neighbors = fineGridGraph.getNeighbors(currentVertex);
+        if (neighbors[0] != prevVertex) {
             prevVertex = currentVertex;
-            currentVertex = fineGridGraph.getNeighbors(currentVertex)[0];
+            currentVertex = neighbors[0];
         } else {
             prevVertex = currentVertex;
-            currentVertex = fineGridGraph.getNeighbors(currentVertex)[1];
+            currentVertex = neighbors[1];
         }
 
-        geometry_msgs::PoseStamped pose;
-        pose.header.frame_id = "map";
-        pose.header.stamp = ros::Time::now();
-        pose.pose.orientation.w = 1;
 
         pose.pose.position.x = prevVertex.x * (graph.getResolution() / 2.0) +
                 graph.getOriginX() + graph.getResolution() / 4.0;
@@ -221,4 +232,56 @@ nav_msgs::Path::Ptr StcPathPlanner::extractPathFromSpanningTree(
     }
 
     return path;
+}
+
+Vertex StcPathPlanner::mapToVertex(tf::Vector3 coordinates,
+        const MapGraph& graph) const {
+    Vertex vertex;
+
+    vertex.x = (coordinates.getX() - graph.getOriginX()) / graph.getResolution();
+    vertex.y = (coordinates.getY() - graph.getOriginY()) / graph.getResolution();
+
+    return vertex;
+}
+
+void StcPathPlanner::publishSpanningTree(const MapGraph& graph) const {
+    visualization_msgs::MarkerArray arr;
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = "map";
+    marker.header.stamp = ros::Time();
+    marker.id = 1;
+    marker.type = visualization_msgs::Marker::LINE_LIST;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.pose.orientation.x = 0.0;
+    marker.pose.orientation.y = 0.0;
+    marker.pose.orientation.z = 0.0;
+    marker.pose.orientation.w = 1.0;
+    marker.scale.x = 0.1;
+    marker.color.a = 0.25;
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+
+    foreach(const Edge& edge, graph.getEdges()) {
+        geometry_msgs::Point p1;
+
+        p1.x = edge.vertex1.x * (graph.getResolution() / 1.0) +
+                graph.getOriginX() + graph.getResolution() / 2.0;
+
+        p1.y = edge.vertex1.y * (graph.getResolution() / 1.0) +
+                graph.getOriginY() + graph.getResolution() / 2.0;
+
+        geometry_msgs::Point p2;
+
+        p2.x = edge.vertex2.x * (graph.getResolution() / 1.0) +
+                graph.getOriginX() + graph.getResolution() / 2.0;
+
+        p2.y = edge.vertex2.y * (graph.getResolution() / 1.0) +
+                graph.getOriginY() + graph.getResolution() / 2.0;
+
+        marker.points.push_back(p1);
+        marker.points.push_back(p2);
+    }
+    arr.markers.push_back(marker);
+    visPublisher_.publish(arr);
 }
